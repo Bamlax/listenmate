@@ -29,6 +29,11 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Accept Android SDK licenses
+        run: |
+          set +o pipefail
+          yes | flutter doctor --android-licenses
+
       - name: Extract latest changelog
         id: changelog
         run: |
