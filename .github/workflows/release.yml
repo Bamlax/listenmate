@@ -25,7 +25,8 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: '3.38.4'
+          channel: 'stable'
           cache: true
 
       - name: Extract latest changelog
@@ -69,7 +70,7 @@ jobs:
         run: flutter pub get
 
       - name: Build Android Release APK
-        run: flutter build apk --release --android-skip-build-dependency-validation
+        run: flutter build apk --release
 
       - name: Rename APK artifact
         run: cp build/app/outputs/flutter-apk/app-release.apk "listenmate-${{ steps.changelog.outputs.version }}.apk"
