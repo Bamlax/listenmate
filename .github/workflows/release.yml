@@ -34,6 +34,17 @@ jobs:
           set +o pipefail
           yes | flutter doctor --android-licenses
 
+      - name: Configure Android signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          printf "storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=upload-keystore.jks\n" \
+            "$KEY_STORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" > android/key.properties
+
       - name: Extract latest changelog
         id: changelog
         run: |
@@ -84,7 +95,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.changelog.outputs.version }}
-          name: ListenMate ${{ steps.changelog.outputs.version }}
+          name: ${{ steps.changelog.outputs.version }}
           body_path: release_notes.md
           files: listenmate-${{ steps.changelog.outputs.version }}.apk
           draft: false
