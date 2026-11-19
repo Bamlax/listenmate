@@ -1,0 +1,85 @@
+name: 'Build and Release Android APK'
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Extract latest changelog
+        id: changelog
+        run: |
+          python3 -c '
+          import os, re
+
+          with open("lib/data/changelog.dart", "r", encoding="utf-8") as f:
+              content = f.read()
+
+          match = re.search(
+              r"VersionRecord\s*\(\s*"
+              r"version\s*:\s*[\x27\"]([^\x27\"]+)[\x27\"]\s*,\s*"
+              r"date\s*:\s*[\x27\"]([^\x27\"]+)[\x27\"]\s*,\s*"
+              r"changes\s*:\s*\[(.*?)\]",
+              content,
+              re.S,
+          )
+          if not match:
+              raise ValueError("Failed to parse latest VersionRecord from lib/data/changelog.dart")
+
+          version = match.group(1).strip()
+          if not version.startswith("v"):
+              version = f"v{version}"
+
+          date_str = match.group(2).strip()
+          changes = re.findall(r"[\x27\"]([^\x27\"]+)[\x27\"]", match.group(3))
+
+          lines = [f"### 更新内容 ({date_str})" if date_str else "### 更新内容"]
+          lines.extend([f"- {item}" for item in changes])
+
+          with open("release_notes.md", "w", encoding="utf-8") as out:
+              out.write("\n".join(lines))
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as gh_out:
+              gh_out.write(f"version={version}\n")
+          '
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Android Release APK
+        run: flutter build apk --release
+
+      - name: Rename APK artifact
+        run: cp build/app/outputs/flutter-apk/app-release.apk "listenmate-${{ steps.changelog.outputs.version }}.apk"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.changelog.outputs.version }}
+          name: ListenMate ${{ steps.changelog.outputs.version }}
+          body_path: release_notes.md
+          files: listenmate-${{ steps.changelog.outputs.version }}.apk
+          draft: false
+          prerelease: false
