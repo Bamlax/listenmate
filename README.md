@@ -23,7 +23,7 @@
 
 | 听力精听与双语字幕 | 设置与模型管理 |
 | :---: | :---: |
-| <img src="docs/screenshots/home.jpg" width="200" alt="听力主界面" /> | <img src="docs/screenshots/settings.jpg" width="280" alt="设置界面" /> |
+| <img src="docs/screenshots/home.jpg" width="280" alt="听力主界面" /> | <img src="docs/screenshots/settings.jpg" width="280" alt="设置界面" /> |
 
 ## 核心功能
 
