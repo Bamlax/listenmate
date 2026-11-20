@@ -1,4 +1,4 @@
-package com.example.listenmate // <-- 请保留与你 MainActivity.kt 一致的 package 名称
+package com.bamlax.listenmate // <-- 请保留与你 MainActivity.kt 一致的 package 名称
 
 import android.media.AudioFormat
 import android.media.MediaCodec

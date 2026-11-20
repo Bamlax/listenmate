@@ -1,4 +1,4 @@
-package com.example.listenmate // <-- 请保留你原有的 package 声明
+package com.bamlax.listenmate // <-- 请保留你原有的 package 声明
 
 import android.os.Handler
 import android.os.Looper
