@@ -21,7 +21,7 @@
 
 ## 界面预览
 
-| 听力精听与双语字幕 | 设置与模型管理 |
+| 听力 | 设置 |
 | :---: | :---: |
 | <img src="docs/screenshots/home.jpg" width="280" alt="听力主界面" /> | <img src="docs/screenshots/settings.jpg" width="280" alt="设置界面" /> |
 
