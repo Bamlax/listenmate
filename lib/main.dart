@@ -3,60 +3,59 @@ import 'package:provider/provider.dart';
 import 'providers/player_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
+import 'services/update_service.dart';
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  final playerProvider = PlayerProvider();
-  await playerProvider.init();
+  final provider = PlayerProvider();
+  await provider.init();
 
   runApp(
     ChangeNotifierProvider.value(
-      value: playerProvider,
-      child: const ListeningAssistantApp(),
+      value: provider,
+      child: const ListenMateApp(),
     ),
   );
 }
 
-class ListeningAssistantApp extends StatelessWidget {
-  const ListeningAssistantApp({super.key});
-
-  static const _seedBlue = Color(0xFF1565C0);
+class ListenMateApp extends StatelessWidget {
+  const ListenMateApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+    const seedColor = Color(0xFF1565C0);
     return MaterialApp(
-      title: '听力助手',
+      title: 'ListenMate · 听力助手',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.system,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: _seedBlue,
+          seedColor: seedColor,
           brightness: Brightness.light,
         ),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: _seedBlue,
+          seedColor: seedColor,
           brightness: Brightness.dark,
         ),
       ),
-      home: const MainNavigationScreen(),
+      home: const MainScaffold(),
     );
   }
 }
 
-class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+class MainScaffold extends StatefulWidget {
+  const MainScaffold({super.key});
 
   @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+  State<MainScaffold> createState() => _MainScaffoldState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 0;
+class _MainScaffoldState extends State<MainScaffold> {
+  int _selectedIndex = 0;
 
   static const List<Widget> _pages = [
     HomeScreen(),
@@ -64,16 +63,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        UpdateService.checkForUpdate(context, silent: true);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(
-        index: _currentIndex,
+        index: _selectedIndex,
         children: _pages,
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
-          setState(() => _currentIndex = index);
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (idx) {
+          setState(() => _selectedIndex = idx);
         },
         destinations: const [
           NavigationDestination(

@@ -13,6 +13,15 @@ class VersionRecord {
 /// 应用历史版本记录（按时间倒序排列，第 1 条会自动作为设置页显示的“当前版本”）
 /// 如需新增版本，只需复制一条 VersionRecord 粘贴到列表最上方即可。
 const List<VersionRecord> appVersionHistory = [
+    VersionRecord(
+    version: 'v0.1.1',
+    date: '2026-11-20',
+    changes: [
+      '新增：启动时自动检测 GitHub 最新版本',
+      '新增：设置页「关于与开源」',
+      '优化：应用显示名称调整为「听力助手」',
+    ],
+  ),
   VersionRecord(
     version: 'v0.1.0',
     date: '2026-11-19',

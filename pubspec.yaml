@@ -1,7 +1,7 @@
 name: listening_assistant
 description: 四六级英语听力助手
 publish_to: 'none'
-version: 0.1.0+4
+version: 0.1.1+5
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -16,6 +16,7 @@ dependencies:
   http: ^1.2.2
   path_provider: ^2.1.4
   whisper_flutter_new: ^1.0.1
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../data/changelog.dart';
@@ -8,6 +9,7 @@ import '../providers/player_provider.dart';
 import '../services/audio_converter_service.dart';
 import '../services/model_manager_service.dart';
 import '../services/storage_service.dart';
+import '../services/update_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -792,11 +794,161 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  /// 关于与开源信息窗口
+  void _showAboutDialog(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final currentVersion = UpdateService.currentLocalVersion;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.headphones_rounded,
+                  size: 20,
+                  color: colorScheme.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ListenMate · 听力助手',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '版本 $currentVersion',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '一款专为大学英语四、六级真题精听打造的本地离线语音识别与 AI 双语字幕工具。',
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 14),
+              // 作者主页
+              _AboutLinkTile(
+                icon: Icons.person_outline_rounded,
+                label: '开发者主页',
+                value: 'Bamlax (github.com/Bamlax)',
+                onTap: () => UpdateService.openExternalUrl(
+                  context,
+                  UpdateService.authorUrl,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // 开源仓库
+              _AboutLinkTile(
+                icon: Icons.code_rounded,
+                label: '项目开源地址',
+                value: 'github.com/Bamlax/listenmate',
+                onTap: () => UpdateService.openExternalUrl(
+                  context,
+                  UpdateService.repoUrl,
+                ),
+                onCopy: () {
+                  Clipboard.setData(
+                    const ClipboardData(text: UpdateService.repoUrl),
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('已复制项目仓库链接'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              // 开源协议说明
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.balance_rounded,
+                          size: 15,
+                          color: colorScheme.primary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '开源协议：MIT License',
+                          style: textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '本软件基于 MIT 协议免费开源，允许自由学习、修改与再分发。',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 11.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                UpdateService.checkForUpdate(context, silent: false);
+              },
+              child: const Text('检查更新'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('关闭'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final latestVersion = appVersionHistory.isNotEmpty
-        ? appVersionHistory.first.version
-        : 'v0.1.0';
+    final latestVersion = UpdateService.currentLocalVersion;
 
     return Consumer<PlayerProvider>(
       builder: (context, provider, _) {
@@ -844,10 +996,93 @@ class SettingsScreen extends StatelessWidget {
                 subtitle: '当前版本 $latestVersion',
                 onTap: () => _showVersionHistorySheet(context),
               ),
+              const SizedBox(height: 8),
+              _SettingsEntryCard(
+                icon: Icons.info_outline_rounded,
+                title: '关于与开源',
+                subtitle: 'Bamlax · MIT License',
+                onTap: () => _showAboutDialog(context),
+              ),
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _AboutLinkTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+  final VoidCallback? onCopy;
+
+  const _AboutLinkTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.onCopy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Material(
+      color: colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (onCopy != null)
+                IconButton(
+                  icon: const Icon(Icons.copy_rounded, size: 16),
+                  tooltip: '复制链接',
+                  constraints:
+                      const BoxConstraints(minWidth: 30, minHeight: 30),
+                  padding: EdgeInsets.zero,
+                  onPressed: onCopy,
+                ),
+              Icon(
+                Icons.open_in_new_rounded,
+                size: 16,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
