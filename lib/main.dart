@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:provider/provider.dart';
 import 'providers/player_provider.dart';
 import 'screens/home_screen.dart';
@@ -7,6 +8,16 @@ import 'services/update_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.bamlax.listenmate.channel.audio',
+    androidNotificationChannelName: '听力音频播放',
+    androidNotificationOngoing: true,
+    androidStopForegroundOnPause: true,
+    fastForwardInterval: const Duration(seconds: 5),
+    rewindInterval: const Duration(seconds: 5),
+  );
+
   final provider = PlayerProvider();
   await provider.init();
 

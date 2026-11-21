@@ -9,17 +9,57 @@ import 'audio_converter_service.dart';
 import 'model_manager_service.dart';
 import 'storage_service.dart';
 
+class SubtitleStageProgress {
+  /// 当前活跃阶段：1 = 格式转换，2 = 离线识别，3 = 双语翻译/生成字幕
+  final int currentStep;
+
+  /// 三步各自独立的 0.0 ~ 1.0 进度
+  final double step1Progress;
+  final double step2Progress;
+  final double step3Progress;
+  final String status;
+
+  const SubtitleStageProgress({
+    required this.currentStep,
+    required this.step1Progress,
+    required this.step2Progress,
+    required this.step3Progress,
+    required this.status,
+  });
+
+  static const SubtitleStageProgress initial = SubtitleStageProgress(
+    currentStep: 1,
+    step1Progress: 0.0,
+    step2Progress: 0.0,
+    step3Progress: 0.0,
+    status: '正在准备生成字幕...',
+  );
+
+  double progressForStep(int step) {
+    switch (step) {
+      case 1:
+        return step1Progress.clamp(0.0, 1.0);
+      case 2:
+        return step2Progress.clamp(0.0, 1.0);
+      case 3:
+        return step3Progress.clamp(0.0, 1.0);
+      default:
+        return 0.0;
+    }
+  }
+}
+
 class SubtitleService {
   final ModelManagerService _modelManager = ModelManagerService();
   final AudioConverterService _converter = AudioConverterService();
 
-  /// 生成双语字幕并实时回调进度 (0.0 ~ 1.0) 与阶段说明
+  /// 生成双语字幕，并按三步各自独立的 0.0 ~ 1.0 进度实时回调
   Future<List<SubtitleCue>> generateBilingualSubtitles({
     required String filePath,
     required OfflineAsrModelType offlineModel,
     required DeepSeekApiConfig deepSeekConfig,
     Duration? audioDuration,
-    void Function(double progress, String status)? onProgress,
+    void Function(SubtitleStageProgress progress)? onProgress,
   }) async {
     final file = File(filePath);
     if (!file.existsSync()) {
@@ -32,13 +72,65 @@ class SubtitleService {
     }
 
     File? tempWavFile;
+    Timer? convertTimer;
     Timer? whisperProgressTimer;
     late final WhisperTranscribeResponse response;
 
     try {
-      onProgress?.call(0.05, '阶段 1/3：正在转换音频为 16kHz WAV 格式...');
+      // ==================== 阶段 1/3：音频格式转换 (0% -> 100%) ====================
+      onProgress?.call(
+        const SubtitleStageProgress(
+          currentStep: 1,
+          step1Progress: 0.0,
+          step2Progress: 0.0,
+          step3Progress: 0.0,
+          status: '阶段 1/3：正在转换音频为 16kHz WAV 格式...',
+        ),
+      );
+
+      final convertStopwatch = Stopwatch()..start();
+      convertTimer = Timer.periodic(
+        const Duration(milliseconds: 150),
+        (_) {
+          final elapsedSec = convertStopwatch.elapsedMilliseconds / 1000.0;
+          final smooth = (0.95 * (1.0 - math.exp(-elapsedSec / 2.2)))
+              .clamp(0.0, 0.95);
+          onProgress?.call(
+            SubtitleStageProgress(
+              currentStep: 1,
+              step1Progress: smooth,
+              step2Progress: 0.0,
+              step3Progress: 0.0,
+              status: '阶段 1/3：正在转换音频为 16kHz WAV 格式...',
+            ),
+          );
+        },
+      );
+
       tempWavFile = await _converter.convertToTempWhisperWav(file.path);
-      onProgress?.call(0.15, '阶段 2/3：正在本地离线识别英文语音...');
+      convertTimer.cancel();
+      convertTimer = null;
+
+      onProgress?.call(
+        const SubtitleStageProgress(
+          currentStep: 1,
+          step1Progress: 1.0,
+          step2Progress: 0.0,
+          step3Progress: 0.0,
+          status: '阶段 1/3：音频格式转换完成',
+        ),
+      );
+
+      // ==================== 阶段 2/3：本地离线识别 (0% -> 100%) ====================
+      onProgress?.call(
+        const SubtitleStageProgress(
+          currentStep: 2,
+          step1Progress: 1.0,
+          step2Progress: 0.0,
+          step3Progress: 0.0,
+          status: '阶段 2/3：正在本地离线识别英文语音...',
+        ),
+      );
 
       final modelDir = await _modelManager.getModelDirectory();
       final whisper = Whisper(
@@ -59,10 +151,15 @@ class SubtitleService {
         (_) {
           final elapsedSec = stopwatch.elapsedMilliseconds / 1000.0;
           final ratio = 1.0 - math.exp(-elapsedSec / estimatedSec);
-          final smoothProgress = 0.15 + 0.59 * ratio;
+          final step2Progress = (0.98 * ratio).clamp(0.0, 0.98);
           onProgress?.call(
-            smoothProgress,
-            '阶段 2/3：正在本地离线识别英文语音...',
+            SubtitleStageProgress(
+              currentStep: 2,
+              step1Progress: 1.0,
+              step2Progress: step2Progress,
+              step3Progress: 0.0,
+              status: '阶段 2/3：正在本地离线识别英文语音...',
+            ),
           );
         },
       );
@@ -79,8 +176,18 @@ class SubtitleService {
 
       whisperProgressTimer.cancel();
       whisperProgressTimer = null;
-      onProgress?.call(0.75, '英文语音识别完成，准备处理字幕...');
+
+      onProgress?.call(
+        const SubtitleStageProgress(
+          currentStep: 2,
+          step1Progress: 1.0,
+          step2Progress: 1.0,
+          step3Progress: 0.0,
+          status: '阶段 2/3：英文语音识别完成',
+        ),
+      );
     } finally {
+      convertTimer?.cancel();
       whisperProgressTimer?.cancel();
       if (tempWavFile != null && tempWavFile.existsSync()) {
         try {
@@ -97,8 +204,17 @@ class SubtitleService {
       throw Exception('未识别到有效英文语音内容');
     }
 
+    // ==================== 阶段 3/3：双语翻译 / 生成字幕 (0% -> 100%) ====================
     if (!deepSeekConfig.isConfigured) {
-      onProgress?.call(1.0, '英文字幕生成完成');
+      onProgress?.call(
+        const SubtitleStageProgress(
+          currentStep: 3,
+          step1Progress: 1.0,
+          step2Progress: 1.0,
+          step3Progress: 1.0,
+          status: '阶段 3/3：英文字幕生成完成',
+        ),
+      );
       return List.generate(rawSegments.length, (i) {
         final seg = rawSegments[i];
         return SubtitleCue(
@@ -122,18 +238,53 @@ class SubtitleService {
           : rawSegments.length;
       final batch = rawSegments.sublist(i, end);
 
-      final currentProgress = 0.75 + 0.25 * (i / rawSegments.length);
+      final batchStartRatio = i / rawSegments.length;
+      final batchEndRatio = end / rawSegments.length;
+      final batchSoftCap = (batchEndRatio - 0.02).clamp(batchStartRatio, 0.98);
+      final statusMsg =
+          '阶段 3/3：DeepSeek 正在翻译双语字幕 ($end/${rawSegments.length} 句)...';
+
       onProgress?.call(
-        currentProgress,
-        '阶段 3/3：DeepSeek 正在翻译双语字幕 ($end/${rawSegments.length} 句)...',
+        SubtitleStageProgress(
+          currentStep: 3,
+          step1Progress: 1.0,
+          step2Progress: 1.0,
+          step3Progress: batchStartRatio,
+          status: statusMsg,
+        ),
       );
 
-      final translations = await _translateWithDeepSeek(
-        englishLines: batch.map((e) => e.english).toList(),
-        baseUrl: cleanBaseUrl,
-        apiKey: deepSeekConfig.apiKey.trim(),
-        model: deepSeekConfig.model.trim(),
+      final batchStopwatch = Stopwatch()..start();
+      Timer? translateTimer = Timer.periodic(
+        const Duration(milliseconds: 300),
+        (_) {
+          final elapsedSec = batchStopwatch.elapsedMilliseconds / 1000.0;
+          final span = batchSoftCap - batchStartRatio;
+          final smooth =
+              batchStartRatio + span * (1.0 - math.exp(-elapsedSec / 4.5));
+          onProgress?.call(
+            SubtitleStageProgress(
+              currentStep: 3,
+              step1Progress: 1.0,
+              step2Progress: 1.0,
+              step3Progress: smooth.clamp(batchStartRatio, batchSoftCap),
+              status: statusMsg,
+            ),
+          );
+        },
       );
+
+      late final List<String> translations;
+      try {
+        translations = await _translateWithDeepSeek(
+          englishLines: batch.map((e) => e.english).toList(),
+          baseUrl: cleanBaseUrl,
+          apiKey: deepSeekConfig.apiKey.trim(),
+          model: deepSeekConfig.model.trim(),
+        );
+      } finally {
+        translateTimer.cancel();
+      }
 
       for (int j = 0; j < batch.length; j++) {
         final seg = batch[j];
@@ -149,14 +300,26 @@ class SubtitleService {
         );
       }
 
-      final doneProgress = 0.75 + 0.25 * (end / rawSegments.length);
       onProgress?.call(
-        doneProgress,
-        '阶段 3/3：DeepSeek 正在翻译双语字幕 ($end/${rawSegments.length} 句)...',
+        SubtitleStageProgress(
+          currentStep: 3,
+          step1Progress: 1.0,
+          step2Progress: 1.0,
+          step3Progress: batchEndRatio,
+          status: statusMsg,
+        ),
       );
     }
 
-    onProgress?.call(1.0, '双语字幕生成完成');
+    onProgress?.call(
+      const SubtitleStageProgress(
+        currentStep: 3,
+        step1Progress: 1.0,
+        step2Progress: 1.0,
+        step3Progress: 1.0,
+        status: '阶段 3/3：双语字幕生成完成',
+      ),
+    );
     return result;
   }
 
@@ -176,7 +339,6 @@ class SubtitleService {
         int startMs = seg.fromTs.inMilliseconds;
         int endMs = seg.toTs.inMilliseconds;
 
-        // 保证时间轴严格单调递增，避免区间倒挂
         if (startMs < prevEndMs) {
           startMs = prevEndMs;
         }
@@ -199,7 +361,6 @@ class SubtitleService {
       if (parsed.isNotEmpty) return parsed;
     }
 
-    // 兜底：按各句字符长度在音频总时长内等比例分配时间戳，避免固定 4 秒导致累积漂移
     final fullText = response.text.trim();
     if (fullText.isEmpty) return [];
 
@@ -244,7 +405,7 @@ class SubtitleService {
     final uri = Uri.parse('$baseUrl/chat/completions');
     final numberedInput = List.generate(
       englishLines.length,
-      (idx) => '${idx + 1}. ${englishLines[idx]}',
+      (idx) => '${idx + 1}.${englishLines[idx]}',
     ).join('\n');
 
     final isDeepSeek = baseUrl.contains('deepseek.com');
@@ -276,7 +437,7 @@ class SubtitleService {
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('DeepSeek 翻译接口报错 (${response.statusCode}): ${response.body}');
+      throw Exception('DeepSeek 翻译接口报错 (${response.statusCode}):${response.body}');
     }
 
     final Map<String, dynamic> data =

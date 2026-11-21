@@ -13,6 +13,14 @@ class VersionRecord {
 /// 应用历史版本记录（按时间倒序排列，第 1 条会自动作为设置页显示的“当前版本”）
 /// 如需新增版本，只需复制一条 VersionRecord 粘贴到列表最上方即可。
 const List<VersionRecord> appVersionHistory = [
+  VersionRecord(
+    version: 'v0.1.2',
+    date: '2026-11-21',
+    changes: [
+      '新增：接入 Android 系统媒体控件，支持在锁屏界面与通知栏控制音频播放',
+      '优化：将字幕生成拆分为格式转换、离线识别、双语翻译三步独立进度条（均从 0% 至 100%）',
+    ],
+  ),
     VersionRecord(
     version: 'v0.1.1',
     date: '2026-11-20',

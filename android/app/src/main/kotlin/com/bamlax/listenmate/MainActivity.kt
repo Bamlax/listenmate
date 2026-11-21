@@ -1,13 +1,13 @@
-package com.bamlax.listenmate // <-- 请保留你原有的 package 声明
+package com.bamlax.listenmate
 
 import android.os.Handler
 import android.os.Looper
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
 
-class MainActivity : FlutterActivity() {
+class MainActivity : AudioServiceActivity() {
     private val channelName = "listenmate/audio_converter"
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())

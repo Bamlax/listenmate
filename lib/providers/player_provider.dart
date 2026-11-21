@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import '../models/audio_item.dart';
 import '../services/model_manager_service.dart';
 import '../services/storage_service.dart';
@@ -29,12 +30,11 @@ class PlayerProvider extends ChangeNotifier {
   int _seekSeconds = 5;
   PlayLoopMode _loopMode = PlayLoopMode.sequence;
 
-  // DeepSeek 翻译配置与字幕生成进度状态
+  // DeepSeek 翻译配置与字幕三步独立进度状态
   DeepSeekApiConfig _deepSeekConfig = const DeepSeekApiConfig();
   SubtitleDisplayMode _subtitleMode = SubtitleDisplayMode.bilingual;
   bool _isGeneratingSubtitles = false;
-  double _subtitleProgress = 0.0;
-  String _subtitleStatusText = '';
+  SubtitleStageProgress _subtitleStageProgress = SubtitleStageProgress.initial;
 
   // 字幕时间轴偏移量（毫秒）：正值表示字幕提前显示，负值表示字幕延后显示
   int _subtitleShiftMs = 300;
@@ -68,8 +68,10 @@ class PlayerProvider extends ChangeNotifier {
   DeepSeekApiConfig get deepSeekConfig => _deepSeekConfig;
   SubtitleDisplayMode get subtitleMode => _subtitleMode;
   bool get isGeneratingSubtitles => _isGeneratingSubtitles;
-  double get subtitleProgress => _subtitleProgress;
-  String get subtitleStatusText => _subtitleStatusText;
+  SubtitleStageProgress get subtitleStageProgress => _subtitleStageProgress;
+  double get subtitleProgress => _subtitleStageProgress
+      .progressForStep(_subtitleStageProgress.currentStep);
+  String get subtitleStatusText => _subtitleStageProgress.status;
   int get subtitleShiftMs => _subtitleShiftMs;
 
   OfflineAsrModelType get selectedOfflineModel => _selectedOfflineModel;
@@ -89,10 +91,8 @@ class PlayerProvider extends ChangeNotifier {
     final item = currentItem;
     if (item == null || item.subtitles.isEmpty) return -1;
 
-    // 正值 shiftMs 使字幕提前触发，消除识别延迟
     final effectiveMs = _position.inMilliseconds + _subtitleShiftMs;
 
-    // 优先匹配正在进行的区间
     for (int i = 0; i < item.subtitles.length; i++) {
       final cue = item.subtitles[i];
       if (effectiveMs >= cue.startMs && effectiveMs <= cue.endMs) {
@@ -100,7 +100,6 @@ class PlayerProvider extends ChangeNotifier {
       }
     }
 
-    // 句间停顿期：保持高亮刚刚播放完毕的那一句
     for (int i = item.subtitles.length - 1; i >= 0; i--) {
       if (effectiveMs >= item.subtitles[i].startMs) {
         return i;
@@ -225,7 +224,17 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
 
     await _storage.saveLastTrackId(item.id);
-    await _player.setFilePath(item.filePath);
+    await _player.setAudioSource(
+      AudioSource.file(
+        item.filePath,
+        tag: MediaItem(
+          id: item.id,
+          album: '听力助手 · ListenMate',
+          title: item.title,
+          artist: '英语精听',
+        ),
+      ),
+    );
     await _player.setSpeed(_speed);
 
     if (autoPlay) {
@@ -413,8 +422,7 @@ class PlayerProvider extends ChangeNotifier {
     }
 
     _isGeneratingSubtitles = true;
-    _subtitleProgress = 0.02;
-    _subtitleStatusText = '正在准备生成字幕...';
+    _subtitleStageProgress = SubtitleStageProgress.initial;
     notifyListeners();
 
     try {
@@ -423,9 +431,8 @@ class PlayerProvider extends ChangeNotifier {
         offlineModel: _selectedOfflineModel,
         deepSeekConfig: _deepSeekConfig,
         audioDuration: _duration,
-        onProgress: (progress, status) {
-          _subtitleProgress = progress.clamp(0.0, 1.0);
-          _subtitleStatusText = status;
+        onProgress: (stageProgress) {
+          _subtitleStageProgress = stageProgress;
           notifyListeners();
         },
       );
@@ -444,8 +451,7 @@ class PlayerProvider extends ChangeNotifier {
       return e.toString().replaceFirst('Exception: ', '');
     } finally {
       _isGeneratingSubtitles = false;
-      _subtitleProgress = 0.0;
-      _subtitleStatusText = '';
+      _subtitleStageProgress = SubtitleStageProgress.initial;
       notifyListeners();
     }
   }

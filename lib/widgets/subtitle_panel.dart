@@ -3,6 +3,7 @@ import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import '../models/audio_item.dart';
 import '../providers/player_provider.dart';
+import '../services/subtitle_service.dart';
 
 class SubtitlePanel extends StatefulWidget {
   const SubtitlePanel({super.key});
@@ -52,7 +53,6 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
       return;
     }
 
-    // 目标项尚未进入可视区渲染时，先在内部列表预滚动触发构建，下一帧再精确对齐
     final maxExtent = _scrollController.position.maxScrollExtent;
     if (maxExtent > 0) {
       final roughOffset =
@@ -80,7 +80,6 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
     }
   }
 
-  /// 重新生成字幕二次确认弹窗
   Future<void> _confirmRegenerate(
     BuildContext context,
     PlayerProvider provider,
@@ -140,7 +139,6 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
     }
   }
 
-  /// 时间轴同步微调弹窗
   void _showTimelineSyncSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -359,8 +357,7 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
             const SizedBox(height: 10),
             if (provider.isGeneratingSubtitles)
               _SubtitleProgressCard(
-                progress: provider.subtitleProgress,
-                statusText: provider.subtitleStatusText,
+                stageProgress: provider.subtitleStageProgress,
                 hasDeepSeek: provider.deepSeekConfig.isConfigured,
               )
             else if (currentItem == null || subtitles.isEmpty)
@@ -552,31 +549,21 @@ class _SubtitlePanelState extends State<SubtitlePanel> {
 }
 
 class _SubtitleProgressCard extends StatelessWidget {
-  final double progress;
-  final String statusText;
+  final SubtitleStageProgress stageProgress;
   final bool hasDeepSeek;
 
   const _SubtitleProgressCard({
-    required this.progress,
-    required this.statusText,
+    required this.stageProgress,
     required this.hasDeepSeek,
   });
-
-  int get _currentStage {
-    if (progress < 0.15) return 1;
-    if (progress < 0.75) return 2;
-    return 3;
-  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final percentInt = (progress * 100).round().clamp(0, 100);
-    final stage = _currentStage;
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: colorScheme.primaryContainer.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(18),
@@ -587,64 +574,33 @@ class _SubtitleProgressCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  statusText.isEmpty ? '正在处理...' : statusText,
-                  style: textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                decoration: BoxDecoration(
-                  color: colorScheme.primary,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '$percentInt%',
-                  style: textTheme.labelMedium?.copyWith(
-                    color: colorScheme.onPrimary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: LinearProgressIndicator(
-              value: progress > 0 ? progress : null,
-              minHeight: 8,
-              backgroundColor: colorScheme.surfaceContainerHighest,
+          Text(
+            stageProgress.status.isEmpty ? '正在处理...' : stageProgress.status,
+            style: textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: colorScheme.primary,
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _StageLabel(
-                step: 1,
-                label: '格式转换',
-                activeStep: stage,
-              ),
-              _StageLabel(
-                step: 2,
-                label: '离线识别',
-                activeStep: stage,
-              ),
-              _StageLabel(
-                step: 3,
-                label: hasDeepSeek ? 'DeepSeek 翻译' : '生成字幕',
-                activeStep: stage,
-              ),
-            ],
+          const SizedBox(height: 14),
+          _StageProgressRow(
+            step: 1,
+            label: '1. 格式转换',
+            progress: stageProgress.step1Progress,
+            activeStep: stageProgress.currentStep,
+          ),
+          const SizedBox(height: 10),
+          _StageProgressRow(
+            step: 2,
+            label: '2. 离线识别',
+            progress: stageProgress.step2Progress,
+            activeStep: stageProgress.currentStep,
+          ),
+          const SizedBox(height: 10),
+          _StageProgressRow(
+            step: 3,
+            label: hasDeepSeek ? '3. DeepSeek 翻译' : '3. 生成字幕',
+            progress: stageProgress.step3Progress,
+            activeStep: stageProgress.currentStep,
           ),
         ],
       ),
@@ -652,14 +608,16 @@ class _SubtitleProgressCard extends StatelessWidget {
   }
 }
 
-class _StageLabel extends StatelessWidget {
+class _StageProgressRow extends StatelessWidget {
   final int step;
   final String label;
+  final double progress;
   final int activeStep;
 
-  const _StageLabel({
+  const _StageProgressRow({
     required this.step,
     required this.label,
+    required this.progress,
     required this.activeStep,
   });
 
@@ -667,31 +625,58 @@ class _StageLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final isDone = activeStep > step;
-    final isCurrent = activeStep == step;
+    final clamped = progress.clamp(0.0, 1.0);
+    final percentInt = (clamped * 100).round();
+    final isDone = clamped >= 1.0 || activeStep > step;
+    final isCurrent = activeStep == step && !isDone;
 
-    final Color color = (isDone || isCurrent)
+    final Color accentColor = (isDone || isCurrent)
         ? colorScheme.primary
         : colorScheme.onSurfaceVariant.withValues(alpha: 0.6);
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(
-          isDone
-              ? Icons.check_circle_rounded
-              : (isCurrent
-                  ? Icons.radio_button_checked_rounded
-                  : Icons.radio_button_unchecked_rounded),
-          size: 15,
-          color: color,
+        Row(
+          children: [
+            Icon(
+              isDone
+                  ? Icons.check_circle_rounded
+                  : (isCurrent
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded),
+              size: 16,
+              color: accentColor,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                label,
+                style: textTheme.labelMedium?.copyWith(
+                  color: (isDone || isCurrent)
+                      ? colorScheme.onSurface
+                      : colorScheme.onSurfaceVariant,
+                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.w500,
+                ),
+              ),
+            ),
+            Text(
+              '$percentInt%',
+              style: textTheme.labelMedium?.copyWith(
+                color: accentColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: textTheme.labelSmall?.copyWith(
-            color: color,
-            fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(5),
+          child: LinearProgressIndicator(
+            value: clamped,
+            minHeight: 6,
+            backgroundColor: colorScheme.surfaceContainerHighest,
+            valueColor: AlwaysStoppedAnimation<Color>(accentColor),
           ),
         ),
       ],
